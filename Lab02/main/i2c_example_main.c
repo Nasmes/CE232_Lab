@@ -58,14 +58,16 @@ void app_main(void)
 	ESP_ERROR_CHECK(i2c_master_init());
 	ssd1306_init();
 	
-	task_ssd1306_display_img(uit_logo);
-	vTaskDelay(2000/portTICK_PERIOD_MS);
+	while (1)
+	{
+		task_ssd1306_display_img(uit_logo);
+		vTaskDelay(5000/portTICK_PERIOD_MS);
 
-	task_ssd1306_display_clear();
+		task_ssd1306_display_clear();
 
-	task_ssd1306_display_text((void *)"21521048\n21521535\n21521548\n                ERROR\n\n\n\n\nERROR");
-
-	while (1);
+		task_ssd1306_display_text((void *)"21521048\n21521535\n21521548\n                ERROR\n\n\n\n\nERROR");
+		vTaskDelay(5000/portTICK_PERIOD_MS);
+	}
 }
 
 
@@ -305,22 +307,28 @@ void convert_img(uint8_t img_arr[], uint8_t converted_img_arr[1024])
 		// loop, scan 8 bytes, each from every rows
 		for (uint8_t byte_index = 0; byte_index < 16; byte_index++)
 		{
-			uint8_t bit_mask = 0x80;
+			uint8_t byte_stack[] = {img_arr[(page_index * 8 + 0) * 16 + byte_index],
+															img_arr[(page_index * 8 + 1) * 16 + byte_index],
+															img_arr[(page_index * 8 + 2) * 16 + byte_index],
+															img_arr[(page_index * 8 + 3) * 16 + byte_index],
+															img_arr[(page_index * 8 + 4) * 16 + byte_index],
+															img_arr[(page_index * 8 + 5) * 16 + byte_index],
+															img_arr[(page_index * 8 + 6) * 16 + byte_index],
+															img_arr[(page_index * 8 + 7) * 16 + byte_index],
+															};
 			// loop, scan each bit, combine them into a byte
 			for (int8_t bit_index = 0; bit_index < 8; bit_index++)
 			{
-				converted_img_arr[index] = shift_right((img_arr[(page_index * 8 + 0) * 16 + byte_index] & bit_mask), (7 - bit_index))
-																 | shift_right((img_arr[(page_index * 8 + 1) * 16 + byte_index] & bit_mask), (6 - bit_index))
-																 | shift_right((img_arr[(page_index * 8 + 2) * 16 + byte_index] & bit_mask), (5 - bit_index))
-																 | shift_right((img_arr[(page_index * 8 + 3) * 16 + byte_index] & bit_mask), (4 - bit_index))
-																 | shift_right((img_arr[(page_index * 8 + 4) * 16 + byte_index] & bit_mask), (3 - bit_index))
-																 | shift_right((img_arr[(page_index * 8 + 5) * 16 + byte_index] & bit_mask), (2 - bit_index))
-																 | shift_right((img_arr[(page_index * 8 + 6) * 16 + byte_index] & bit_mask), (1 - bit_index))
-																 | shift_right((img_arr[(page_index * 8 + 7) * 16 + byte_index] & bit_mask), (0 - bit_index));
-				bit_mask >>= 1;
+				converted_img_arr[index] = (((byte_stack[0] << bit_index) & 0x80) >> 7)
+																 | (((byte_stack[1] << bit_index) & 0x80) >> 6)
+																 | (((byte_stack[2] << bit_index) & 0x80) >> 5)
+																 | (((byte_stack[3] << bit_index) & 0x80) >> 4)
+																 | (((byte_stack[4] << bit_index) & 0x80) >> 3)
+																 | (((byte_stack[5] << bit_index) & 0x80) >> 2)
+																 | (((byte_stack[6] << bit_index) & 0x80) >> 1)
+																 | (((byte_stack[7] << bit_index) & 0x80) >> 0);
 				index++;
 			}
 		}
 	}
-	
 }
