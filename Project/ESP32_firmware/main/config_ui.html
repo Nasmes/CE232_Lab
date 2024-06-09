@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[CE232]: C1G1 - Dashcam </title>
+</head>
+<body onload="on_load();">
+  <div id="connect">
+    <input type="text" id="connect_input" name="connect_input" value="ws://localhost:8765">
+    <input type="button" value="connect server" onclick="on_connect_server();">
+  </div>
+  <div id="System">
+    <input type="text" id="msg_input" name="message" value="Hello Websocket server">
+    <input type="button" value="send" onclick="on_send_msg();">
+    <input type="button" value="disconnect" onclick="on_disconnect();">
+  </div>
+  <div id="fail">
+    Server connection fail.
+  </div>
+  <div>
+    <canvas id="canvas_image" width="640" height="480"></canvas>
+  </div>
+</body>
+<script>
+  var web_socket = null;
+
+  function on_load()
+  {
+    document.getElementById('send_msg').style.display = 'none';
+    document.getElementById('fail').style.display = 'none';
+  }
+
+  function on_connect_server()
+  {
+    var url = document.getElementById('connect_input').value;
+    console.log(url);
+
+    web_socket = new WebSocket(url);
+    web_socket.binaryType = 'arraybuffer';
+    web_socket.onmessage = on_message;
+    web_socket.onerror = on_error;
+    document.getElementById('send_msg').style.display = 'inline';
+    document.getElementById('connect').style.display = 'none';
+  };
+
+  function on_send_msg()
+  {
+    var text_input = document.getElementById('msg_input').value;
+    web_socket.send(text_input);
+  }
+
+  function on_error(recv_data)
+  {
+    console.log("on_error");
+    document.getElementById('send_msg').style.display = 'none';
+    document.getElementById('fail').style.display = 'inline';
+  }
+
+  function on_message(recv_data)
+  {
+    console.log("on_message");
+    console.log(recv_data.data);
+    console.log(typeof(recv_data.data));
+    console.log(recv_data.data.length);
+    // var recv_image_data = new Uint8Array(recv_data.data);
+    // var canvas_image = document.getElementById('canvas_image');
+    // var ctx = canvas_image.getContext('2d');
+    // var image = new Image();
+    // image.src = 'data:image/jpeg;base64,' + recv_data.data;
+    // image.onload = function() {
+    //   ctx.drawImage(image, 0, 0);
+    // }
+  }
+
+  function on_disconnect()
+  {
+    console.log("on_disconnect");
+    web_socket.close()
+
+    document.getElementById('send_msg').style.display = 'none';
+    document.getElementById('connect').style.display = 'inline';
+  }
+
+</script>
+</html>

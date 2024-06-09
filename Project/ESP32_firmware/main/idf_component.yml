@@ -1,0 +1,10 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/esp32-camera:
+    version: '>=2.0.3'
+  espressif/mdns:
+    version: "^1.0.3"
+    rules:
+      - if: "idf_version >=5.0"
+  # protocol_examples_common:
+  #   path: ${IDF_PATH}/examples/common_components/protocol_examples_common

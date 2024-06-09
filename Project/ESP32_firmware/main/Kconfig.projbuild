@@ -1,0 +1,253 @@
+menu "Application configuration"
+
+	menu "Board config"
+
+		choice BOARD
+			bool "Select Board"
+			default BOARD_ESP32CAM_AITHINKER
+			help
+				Select Board Type.
+	
+			config BOARD_ESP32_WROVER_FREENOVE
+				bool "Freenove ESP32-WROVER CAM Board"
+			config BOARD_ESP32S3_WROOM_FREENOVE
+				bool "Freenove ESP32S3-WROOM CAM Board"
+			config BOARD_CAMERA_MODEL_ESP_EYE
+				bool "Espressif ESP-EYE"
+			config BOARD_ESP32CAM_AITHINKER
+				bool "AiThinker ESP32-CAM"
+			config BOARD_CAMERA_MODEL_TTGO_T_JOURNAL
+				bool "TTGO T-Journal ESP32 Camera"
+			config BOARD_ESPS3_CAM_UICPAL
+				bool "UICPAL ESPS3 CAM RE:1.0"
+		endchoice
+	
+		config ENABLE_FLASH
+			bool "Enable Flash Light"
+			default n
+			help
+				Enable Flash Light.
+	
+		config GPIO_FLASH
+			int "Flash GPIO number"
+			depends on ENABLE_FLASH
+			range 4 34
+			default 4
+			help
+				GPIO number (IOxx) to Button Input.
+				Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used to Button.
+	endmenu
+
+
+	menu "WiFi Setting"
+
+		config ESP_WIFI_SSID
+			string "WiFi SSID"
+			default "myssid"
+			help
+				SSID (network name) to connect to.
+
+		config ESP_WIFI_PASSWORD
+			string "WiFi Password"
+			default "mypassword"
+			help
+				WiFi password (WPA or WPA2) to connect to.
+
+		config ESP_MAXIMUM_RETRY
+			int "Maximum retry"
+			default 5
+			help
+				Set the Maximum retry to avoid station reconnecting to the AP unlimited when the AP is really inexistent.
+
+		config MDNS_HOSTNAME
+			string "mDNS Hostname"
+			default "esp32-camera"
+			help
+				The mDNS host name used by the ESP32.
+
+		config STATIC_IP
+			bool "Enable Static IP Address"
+			default false
+			help
+				Enable Static IP Address.
+
+		config STATIC_IP_ADDRESS
+			depends on STATIC_IP
+			string "Static IP Address"
+			default "192.168.10.100"
+			help
+				Static IP Address for Station.
+
+		config STATIC_GW_ADDRESS
+			depends on STATIC_IP
+			string "Static GW Address"
+			default "192.168.10.1"
+			help
+				Static GW Address for Station.
+
+		config STATIC_NM_ADDRESS
+			depends on STATIC_IP
+			string "Static Netmask"
+			default "255.255.255.0"
+			help
+				Static Netmask for Station.
+	endmenu
+
+
+	menu "Websocket Client"
+
+		config WEBSOCKET_URI
+			string "Websocket endpoint URI"
+			default "wss://echo.websocket.events"
+			help
+				URL of websocket endpoint this example connects to and sends echo
+
+		config WEBSOCKET_CUSTOM_PORT
+			bool "Custom port"
+			default false
+			help
+				Enable custom port number.
+
+		config WEBSOCKET_PORT
+			int "Websocket endpoint port"
+			depends on WEBSOCKET_CUSTOM_PORT
+			range 0 65535
+			default 443
+			help
+				Port number for connection.
+				Default 80 for ws:// and 443 for wss:// 
+
+		config WS_OVER_TLS_SERVER_AUTH
+			bool "Enable WebSocket over TLS with Server Certificate Verification Only"
+			default y
+			help
+				Enables WebSocket connections over TLS (WSS) with server certificate verification.
+				This setting mandates the client to verify the servers certificate, while the server
+				does not require client certificate verification.
+
+		config WS_OVER_TLS_MUTUAL_AUTH
+			bool "Enable WebSocket over TLS with Server Client Mutual Authentification"
+			default n
+			help
+				Enables WebSocket connections over TLS (WSS) with server and client mutual certificate verification.
+
+		config WS_OVER_TLS_SKIP_COMMON_NAME_CHECK
+			bool "Skip common name(CN) check during TLS authentification"
+			default n
+			help
+				Skipping Common Name(CN) check during TLS(WSS) authentificatio
+
+		if CONFIG_IDF_TARGET = "linux"
+			config GCOV_ENABLED
+				bool "Coverage analyzer"
+				default n
+				help
+					Enables coverage analyzing for host tests.
+		endif
+	endmenu
+
+endmenu
+
+menu "UART NMEA configuration"
+
+    orsource "$IDF_PATH/examples/common_components/env_caps/$IDF_TARGET/Kconfig.env_caps"
+
+    config NMEA_PARSER_UART_PORT
+        int "UART PORT number"
+        range 0 2
+        default 1
+        help
+            Number of UART port. See UART documentation for more information about
+            available numbers of UART port.
+
+    config NMEA_PARSER_UART_RXD
+        int "UART RXD pin number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_IN_RANGE_MAX
+        default 5
+        help
+            GPIO number for UART RX pin. See UART documentation for more information
+            about available pin numbers for UART.
+
+    config NMEA_PARSER_RING_BUFFER_SIZE
+        int "NMEA Parser Ring Buffer Size"
+        range 0 2048
+        default 1024
+        help
+            Size of the ring buffer used for UART Rx channel.
+
+    config NMEA_PARSER_TASK_STACK_SIZE
+        int "NMEA Parser Task Stack Size"
+        range 0 4096
+        default 3072
+        help
+            Stack size of NMEA Parser task.
+
+    config NMEA_PARSER_TASK_PRIORITY
+        int "NMEA Parser Task Priority"
+        range 0 24
+        default 2
+        help
+            Priority of NMEA Parser task.
+
+    menu "NMEA Statement Support"
+        comment "At least one statement must be selected"
+        config NMEA_STATEMENT_GGA
+            bool "GGA Statement"
+            default y
+            help
+                Enabling this option will parse the following parameter from GGA statement:
+
+                - Latitude, Longitude, Altitude;
+                - Number of satellites in use, fix status (no fix, GPS, DGPS), UTC time;
+
+        config NMEA_STATEMENT_GSA
+            bool "GSA Statement"
+            default y
+            help
+                Enabling this option will parse the following parameter from GSA statement:
+
+                - Position/Vertical/Horizontal dilution of precision;
+                - Fix mode (no fix, 2D, 3D fix);
+                - IDs of satellites in use;
+
+        config NMEA_STATEMENT_GSV
+            bool "GSV Statement"
+            default y
+            help
+                Enabling this option will parse the following parameter from GSV statement:
+
+                - Number of satellites in view;
+                - Optional details of each satellite in view;
+
+        config NMEA_STATEMENT_RMC
+            bool "RMC Statement"
+            default y
+            help
+                Enabling this option will parse the following parameter from RMC statement:
+
+                - Validity of GPS signal;
+                - Ground speed (knots) and course over ground (degrees);
+                - Magnetic variation;
+                - UTC date;
+
+        config NMEA_STATEMENT_GLL
+            bool "GLL Statement"
+            default y
+            help
+                Enabling this option will parse the following parameter from GLL statement:
+
+                - Latitude, Longitude;
+                - UTC time;
+
+        config NMEA_STATEMENT_VTG
+            bool "VTG Statement"
+            default y
+            help
+                Enabling this option will parse the following parameter from VTG statement:
+
+                - Ground speed (knots, km/h) and course over ground (degrees);
+                - Magnetic variation;
+
+    endmenu
+
+endmenu
