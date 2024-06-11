@@ -11,24 +11,106 @@
 	https://github.com/espressif/esp-idf/tree/master/examples/protocols/http_server/ws_echo_server
 */
 
-#include <stdio.h>
-#include <inttypes.h>
-#include <string.h>
+#include <main.h>
+#include <cJSON.h>
+
 #include <sys/stat.h>
 #include <mbedtls/base64.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_system.h"
-#include "esp_err.h"
-#include "esp_log.h"
-#include "esp_vfs.h"
-
-#include "esp_camera.h"
-
 #include "esp_http_server.h"
 
 static const char *TAG = "WS_SERVER";
+
+typedef struct async_resp_arg {
+	httpd_handle_t hd;
+	int fd;
+} async_resp_arg_t;
+
+static void task_client_ui_update(void *arg)
+{
+	int count = 0;
+	// Task TAG
+	char TAG[] = "Web_UI_task";
+
+	// Client info
+	async_resp_arg_t *client_arg;
+	client_arg = arg;
+	if (client_arg == NULL){
+		return;
+	}
+	
+	// Event bits
+	EventBits_t cur_status, old_status = BIT31; // Assign absurd value to make it run first time 
+
+	// Data buffers
+	uint8_t *data_buf = NULL;
+	uint8_t wf_st, sv_st, vid_st, recon, relog;
+	char *ssid = NULL;
+	char *pswd = NULL;
+	char *uri = NULL;
+	int port = 0;
+	
+	// JSON
+	cJSON *jsData = NULL;
+
+	while (httpd_ws_get_fd_info(client_arg->hd, client_arg->fd) == HTTPD_WS_CLIENT_WEBSOCKET)
+	{
+		count++;
+		cur_status = xEventGroupGetBits(app_event_group);
+		if(cur_status != old_status){
+			// Prepare data
+			wf_st = (cur_status & WIFI_CONNECTED_BIT) != 0;
+			sv_st = (cur_status & WS_CONNECTED_BIT) ? ((cur_status & WS_CONNECTED_BIT) ? 2 : 1) : 0;
+			vid_st = (cur_status & VIDEO_RECORD_BIT) != 0;
+			ESP_ERROR_CHECK(nvs_get_u8(nvs_config, "wifi_recon", &recon));
+			ESP_ERROR_CHECK(nvs_get_u8(nvs_config, "relog", &relog));
+			wifi_read_config_from_nvs(&ssid, &pswd);
+			websocket_read_config_from_nvs(&uri, &port);
+
+			// Create JSON
+			ESP_LOGI(TAG, "Creating JSON data");
+			jsData = cJSON_CreateObject();
+			cJSON_AddNumberToObject(jsData, "id", DEVICE_ID);
+			cJSON_AddNumberToObject(jsData, "wf_st", wf_st);
+			cJSON_AddNumberToObject(jsData, "sv_st", sv_st);
+			cJSON_AddNumberToObject(jsData, "vid_st", vid_st);
+			cJSON_AddStringToObject(jsData, "ssid", ssid);
+			cJSON_AddStringToObject(jsData, "pswd", pswd);
+			cJSON_AddNumberToObject(jsData, "recon", recon);
+			cJSON_AddStringToObject(jsData, "uri", uri);
+			cJSON_AddNumberToObject(jsData, "port", port);
+			cJSON_AddNumberToObject(jsData, "relog", relog);
+
+			// Send to UI
+			if (data_buf){
+				free(data_buf);
+				data_buf = NULL;
+			}
+			data_buf = (uint8_t*) cJSON_Print(jsData);
+
+			httpd_ws_frame_t ws_pkt;
+    	memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
+			ws_pkt.payload = data_buf;
+			ws_pkt.len = strlen((char*) data_buf);
+			ws_pkt.type = HTTPD_WS_TYPE_TEXT;
+
+			ESP_LOGI(TAG, "Sending JSON data, len: %d bytes", ws_pkt.len);
+			httpd_ws_send_frame_async(client_arg->hd, client_arg->fd, &ws_pkt);
+
+			// Clean up
+			cJSON_Delete(jsData);
+			free(ssid);
+			free(pswd);
+			free(uri);
+			ssid = NULL;
+			pswd = NULL;
+			uri = NULL;
+		}
+		old_status = cur_status;
+		vTaskDelay(pdMS_TO_TICKS(1000));
+	}
+	ESP_LOGW(TAG, "Client UI updater exit after %d run", count);
+	vTaskDelete(NULL);
+}
 
 /*static esp_err_t camera_capture(char * FileName, size_t *pictureSize)
 {
@@ -249,10 +331,99 @@ static esp_err_t ws_handler(httpd_req_t *req)
 // 	free(base64_buffer);
 
 	// Processing logics ========================================================
-	// Echo back
-	ret = httpd_ws_send_frame(req, &ws_pkt);
-	if (ret != ESP_OK) {
-			ESP_LOGE(TAG, "httpd_ws_send_frame failed with %d", ret);
+	
+	if (ws_pkt.type == HTTPD_WS_TYPE_TEXT)
+	switch (ws_pkt.payload[0])
+	{
+		// If UI is accessing for the first time
+		case 'a':{
+			ESP_LOGI(TAG, "New user from Web UI");
+			async_resp_arg_t *client_args = malloc(sizeof(async_resp_arg_t));
+			if (client_args == NULL){
+				return ESP_ERR_NO_MEM;
+			}
+			client_args->hd = req->handle;
+			client_args->fd = httpd_req_to_sockfd(req);
+
+			xTaskCreate(task_client_ui_update, NULL, 2048, (void*)client_args, 3, NULL);
+			break;
+		}
+		
+		// If UI request video record function
+		case 'v':{
+			ESP_LOGI(TAG, "Video toggle from Web UI");
+			if(xEventGroupGetBits(app_event_group) & VIDEO_RECORD_BIT){
+				xEventGroupSetBits(app_event_group, VIDEO_STOP_BIT);
+			}
+			else{
+				xEventGroupSetBits(app_event_group, VIDEO_RECORD_BIT);
+			}
+			break;
+		}
+
+		// If UI request to disconnect, set events to disconnect
+		case 'd':{
+			ESP_LOGI(TAG, "Disconnect request from Web UI");
+			xEventGroupSetBits(app_event_group, WIFI_REQ_DISCONNECT_BIT | WS_REQ_DISCONNECT_BIT | DEVICE_REQ_LOGOUT_BIT);
+			xEventGroupClearBits(app_event_group, WIFI_REQ_CONNECT_BIT | WS_REQ_CONNECT_BIT | DEVICE_REQ_LOGIN_BIT);
+			break;
+		}
+		
+		// Else, probably JSON and request to connect
+		default:{
+			ESP_LOGI(TAG, "Got new config from Web UI");
+			// Create JSON object and parse data, ignore if it's not
+			cJSON *jsonObj = cJSON_Parse((char*) ws_pkt.payload);
+			cJSON *cursor;
+			if (jsonObj == NULL){
+				ESP_LOGW(TAG, "JSON parse failed!");
+				cJSON_Delete(jsonObj);
+				break;
+			}
+
+			// Update system config
+			cursor = cJSON_GetObjectItemCaseSensitive(jsonObj, "ssid");
+			if (cJSON_IsString(cursor)){
+				if (cursor->valuestring != NULL){
+					ESP_ERROR_CHECK(nvs_set_str(nvs_config, "wifi_ssid", cursor->valuestring));
+				}
+			}
+			cursor = cJSON_GetObjectItemCaseSensitive(jsonObj, "pswd");
+			if (cJSON_IsString(cursor)){
+				if (cursor->valuestring != NULL){
+					if (strlen(cursor->valuestring) > 7)
+						ESP_ERROR_CHECK(nvs_set_str(nvs_config, "wifi_pswd", cursor->valuestring));
+				}
+			}
+			cursor = cJSON_GetObjectItemCaseSensitive(jsonObj, "uri");
+			if (cJSON_IsString(cursor)){
+				if (cursor->valuestring != NULL){
+					ESP_ERROR_CHECK(nvs_set_str(nvs_config, "ws_uri", cursor->valuestring));
+				}
+			}
+			cursor = cJSON_GetObjectItemCaseSensitive(jsonObj, "port");
+			if (cJSON_IsNumber(cursor)){
+				ESP_ERROR_CHECK(nvs_set_i32(nvs_config, "ws_port", (int32_t) cursor->valuedouble));
+			}
+			cursor = cJSON_GetObjectItemCaseSensitive(jsonObj, "recon");
+			if (cJSON_IsNumber(cursor)){
+				ESP_ERROR_CHECK(nvs_set_u8(nvs_config, "wifi_recon", (uint8_t) cursor->valuedouble));
+			}
+			cursor = cJSON_GetObjectItemCaseSensitive(jsonObj, "relog");
+			if (cJSON_IsNumber(cursor)){
+				ESP_ERROR_CHECK(nvs_set_u8(nvs_config, "relog", (uint8_t) cursor->valuedouble));
+			}
+			ESP_ERROR_CHECK(nvs_commit(nvs_config));
+
+			// Clean up
+			cJSON_Delete(jsonObj);
+
+			// Set events to connect
+			xEventGroupSetBits(app_event_group, WIFI_REQ_CONNECT_BIT | WS_REQ_CONNECT_BIT | DEVICE_REQ_LOGIN_BIT);
+			xEventGroupClearBits(app_event_group, WIFI_REQ_DISCONNECT_BIT | WS_REQ_DISCONNECT_BIT | DEVICE_REQ_LOGOUT_BIT);
+
+			break;
+			}
 	}
 
 	// Clean up =================================================================
@@ -264,74 +435,7 @@ static esp_err_t http_handler(httpd_req_t *req)
 {
 	/* Send a simple response */
 	const char resp[] =
-	"\
-	<html>\
-		<head>\
-		</head>\
-		<body onload=\"on_load();\">\
-			<div id=\"connect\">\
-				<input type=\"button\" value=\"connect server\" onclick=\"on_connect_server();\">\
-				<input type=\"text\" id=\"connect_input\" name=\"connect_input\" value=\"dashcam-config\">\
-			</div>\
-			<div id=\"take\">\
-				<input type=\"button\" value=\"take picture\" onclick=\"on_take_picture();\">\
-			</div>\
-			<div id=\"fail\">\
-				Server connection fail.\
-			</div>\
-			<div>\
-				<canvas id=\"canvas_image\" width=\"640\" height=\"480\"></canvas>\
-			</div>\
-		</body>\
-		<script>\
-			var web_socket = null;\
-			function on_load()\
-			{\
-				document.getElementById(\'take\').style.display = \'none\';\
-				document.getElementById(\'fail\').style.display = \'none\';\
-			}\
-			function on_connect_server()\
-			{\
-				var text = document.getElementById(\'connect_input\');\
-				console.log(text.value);\
-				var connection = \"ws://\" + text.value + \":80/ws\";\
-				console.log(connection);\
-				web_socket = new WebSocket(connection);\
-				web_socket.binaryType = \'arraybuffer\';\
-				web_socket.onmessage = on_message;\
-				web_socket.onerror = on_error;\
-				document.getElementById(\'take\').style.display = \'inline\';\
-				document.getElementById(\'connect\').style.display = \'none\';\
-			};\
-			function on_take_picture()\
-			{\
-				var text_input = \"capture\";\
-				web_socket.send(text_input);\
-			}\
-			function on_error(recv_data)\
-			{\
-				console.log(\"on_error\");\
-				document.getElementById(\'take\').style.display = \'none\';\
-				document.getElementById(\'fail\').style.display = \'inline\';\
-			}\
-			function on_message(recv_data)\
-			{\
-				console.log(\"on_message\");\
-				console.log(recv_data.data);\
-				console.log(typeof(recv_data.data));\
-				console.log(recv_data.data.length);\
-				var recv_image_data = new Uint8Array(recv_data.data);\
-				var canvas_image = document.getElementById(\'canvas_image\');\
-				var ctx = canvas_image.getContext(\'2d\');\
-				var image = new Image();\
-				image.src = \'data:image/jpeg;base64,\' + recv_data.data;\
-				image.onload = function() {\
-					ctx.drawImage(image, 0, 0);\
-				}\
-			}\
-		</script>\
-	</html>\
-	";
+	"<!DOCTYPE html><html lang=\"en\"><head> <meta charset=\"UTF-8\"> <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"> <title>Dashcam config</title></head><body onload=\"on_load();\"> <h1>Dashcam device config UI</h1> <h5>CE232 Project - Class 1 Group 1</h5> <hr> <div id=\"openning\"><h2>Connecting to device ...</h2></div> <div id=\"Config\" style=\"display: none;\"> <h3>Device status</h3> <table> <tr> <td> <span><b>Device ID:</b></span> <span id=\"id\"></span> </td> </tr> <tr> <td><b>WIFI status:</b></td> <td><b><span id=\"wf_st\"></span></b></td> </tr> <tr> <td><b>Service status:</b></td> <td><b><span id=\"sv_st\"></span></b></td> </tr> <tr> <td><b>Video status:</b></td> <td><b><span id=\"vid_st\"></span></b></td> </tr> </table> <input id=\"vid_but\" type=\"button\" onclick=\"on_vid_but();\"> <hr> <h3>WIFI setting</h3> <table> <tr> <td><label for=\"ssid\">SSID:</label></td> <td><input id=\"ssid\" type=\"text\"></td> </tr> <tr> <td><label for=\"pswd\">Password:</label></td> <td><input id=\"pswd\" type=\"text\"></td> </tr> </table> <label for=\"recon\">Auto reconnect</label> <input id=\"recon\" type=\"checkbox\"> <h3>WebSocket Client setting</h3> <table> <tr> <td><label for=\"uri\">URI: </label></td> <td><input id=\"uri\" type=\"text\"></td> </tr> <tr> <td><label for=\"port\">Port: </label></td> <td><input id=\"port\" type=\"text\"></td> </tr> </table> <label for=\"relog\">Auto login</label> <input id=\"relog\" type=\"checkbox\"> <br> <input id=\"cf_but\" type=\"button\" onclick=\"on_cf_but();\"> </div> <div id=\"closed\" style=\"display: none;\"><h2>Lost connect! Check wifi and refresh this page.</h2></div></body><script> var ws = null; function on_load() { ws = new WebSocket(\"ws://dashcam-config.local/ws\"); ws.binaryType = \'arraybuffer\'; ws.onopen = on_connect; ws.onmessage = on_message; ws.onerror = on_error; ws.onclose = on_error; } function on_connect() { ws.send(\"a\"); } function on_vid_but() { ws.send(\"v\"); } function on_cf_but() { if (document.getElementById(\"sv_st\").value > 0 || document.getElementById(\"wf_st\").value > 0){ ws.send(\"d\"); } else{ ws.send(JSON.stringify( { \"ssid\": document.getElementById(\"ssid\").value, \"pswd\": document.getElementById(\"pswd\").value, \"recon\": (+document.getElementById(\"recon\").checked), \"uri\": document.getElementById(\"uri\").value, \"port\": new Number(document.getElementById(\"port\").value), \"relog\": (+document.getElementById(\"relog\").checked) } )); } } function on_message(recv_data) { try { const data = JSON.parse(recv_data.data); var wf_st = document.getElementById(\"wf_st\"); var sv_st = document.getElementById(\"sv_st\"); var vid_st = document.getElementById(\"vid_st\"); var ssid = document.getElementById(\"ssid\"); var pswd = document.getElementById(\"pswd\"); var recon = document.getElementById(\"recon\"); var uri = document.getElementById(\"uri\"); var port = document.getElementById(\"port\"); var relog = document.getElementById(\"relog\"); document.getElementById(\"id\").textContent = data.id; wf_st.value = data.wf_st; sv_st.value = data.sv_st; vid_st.value = data.vid_st; wf_st.textContent = wf_st.value > 0 ? \"Connected\" : \"Disconnected\"; wf_st.style.color = wf_st.value > 0 ? \"green\" : \"crimson\"; sv_st.textContent = sv_st.value == 2 ? \"Logged in\" : (sv_st.value == 1 ? \"Connected - Not logged in\" : \"Not connected\"); sv_st.style.color = sv_st.value == 2 ? \"green\" : (sv_st.value == 1 ? \"darkorange\" : \"crimson\"); vid_st.textContent = vid_st.value > 0 ? \"Recording\" : \"Idle\"; vid_st.style.color = vid_st.value > 0 ? \"blue\" : \"black\"; document.getElementById(\"cf_but\").value = (wf_st.value > 0 || sv_st.value > 0) ? \"Disconnect\" : \"Connect\"; document.getElementById(\"vid_but\").value = vid_st.value > 0 ? \"Stop recording\" : \"Start recording\"; var val = wf_st.value > 0 || sv_st.value > 0 || vid_st.value > 0; ssid.disabled = val; pswd.disabled = val; recon.disabled = val; uri.disabled = val; port.disabled = val; relog.disabled = val; document.getElementById(\"cf_but\").disabled = vid_st.value > 0; document.getElementById(\"vid_but\").disabled = wf_st.value != 1 || sv_st.value != 2; if (val){ ssid.value = data.ssid; recon.checked = data.recon; uri.value = data.uri; port.value = data.port; relog.checked = data.relog; } document.getElementById(\'openning\').style.display = \'none\'; document.getElementById(\'Config\').style.display = \'inline\'; } catch (e) { return; } } function on_error(recv_data) { console.log(\"connection lost\"); document.getElementById(\'Config\').style.display = \'none\'; document.getElementById(\'closed\').style.display = \'inline\'; }</script></html>";
 	httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 	return ESP_OK;
 }
@@ -341,6 +445,7 @@ esp_err_t start_webserver(void)
 {
 	httpd_handle_t server = NULL;
 	httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+	config.stack_size = 8192;
 
 	// Start the httpd server
 	ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
@@ -366,7 +471,7 @@ esp_err_t start_webserver(void)
 		.method		= HTTP_GET,
 		.handler	= ws_handler,
 		.user_ctx	= NULL,
-		.is_websocket = true
+		.is_websocket = true,
 	};
 	httpd_register_uri_handler(server, &ws);
 

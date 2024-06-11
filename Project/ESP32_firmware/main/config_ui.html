@@ -4,83 +4,168 @@
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[CE232]: C1G1 - Dashcam </title>
+  <title>Dashcam config</title>
 </head>
 <body onload="on_load();">
-  <div id="connect">
-    <input type="text" id="connect_input" name="connect_input" value="ws://localhost:8765">
-    <input type="button" value="connect server" onclick="on_connect_server();">
+  <h1>Dashcam device config UI</h1>
+  <h5>CE232 Project - Class 1 Group 1</h5>
+  <hr>
+  <div id="openning"><h2>Connecting to device ...</h2></div>
+  <div id="Config" style="display: none;">
+    <h3>Device status</h3>
+    <table>
+      <tr>
+        <td>
+          <span><b>Device ID:</b></span>
+          <span id="id"></span>
+        </td>
+      </tr>
+      <tr>
+        <td><b>WIFI status:</b></td>
+        <td><b><span id="wf_st"></span></b></td>
+      </tr>
+      <tr>
+        <td><b>Service status:</b></td>
+        <td><b><span id="sv_st"></span></b></td>
+      </tr>
+      <tr>
+        <td><b>Video status:</b></td>
+        <td><b><span id="vid_st"></span></b></td>
+      </tr>
+    </table>
+    <input id="vid_but" type="button" onclick="on_vid_but();">
+    <hr>
+    <h3>WIFI setting</h3>
+    <table>
+      <tr>
+        <td><label for="ssid">SSID:</label></td>
+        <td><input id="ssid" type="text"></td>
+      </tr>
+      <tr>
+        <td><label for="pswd">Password:</label></td>
+        <td><input id="pswd" type="text"></td>
+      </tr>
+    </table>
+    <label for="recon">Auto reconnect</label>
+    <input id="recon" type="checkbox">
+    <h3>WebSocket Client setting</h3>
+    <table>
+      <tr>
+        <td><label for="uri">URI: </label></td>
+        <td><input id="uri" type="text"></td>
+      </tr>
+      <tr>
+        <td><label for="port">Port: </label></td>
+        <td><input id="port" type="text"></td>
+      </tr>
+    </table>
+    <label for="relog">Auto login</label>
+    <input id="relog" type="checkbox">
+    <br>
+    <input id="cf_but" type="button" onclick="on_cf_but();">
   </div>
-  <div id="System">
-    <input type="text" id="msg_input" name="message" value="Hello Websocket server">
-    <input type="button" value="send" onclick="on_send_msg();">
-    <input type="button" value="disconnect" onclick="on_disconnect();">
-  </div>
-  <div id="fail">
-    Server connection fail.
-  </div>
-  <div>
-    <canvas id="canvas_image" width="640" height="480"></canvas>
-  </div>
+  <div id="closed" style="display: none;"><h2>Lost connect! Check wifi and refresh this page.</h2></div>
 </body>
 <script>
-  var web_socket = null;
-
+  var ws = null;
   function on_load()
   {
-    document.getElementById('send_msg').style.display = 'none';
-    document.getElementById('fail').style.display = 'none';
+    ws = new WebSocket("ws://dashcam-config.local/ws");
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = on_connect;
+    ws.onmessage = on_message;
+    ws.onerror = on_error;
+    ws.onclose = on_error;
+  }
+  
+  function on_connect()
+  {
+    ws.send("a");
   }
 
-  function on_connect_server()
+  function on_vid_but()
   {
-    var url = document.getElementById('connect_input').value;
-    console.log(url);
-
-    web_socket = new WebSocket(url);
-    web_socket.binaryType = 'arraybuffer';
-    web_socket.onmessage = on_message;
-    web_socket.onerror = on_error;
-    document.getElementById('send_msg').style.display = 'inline';
-    document.getElementById('connect').style.display = 'none';
-  };
-
-  function on_send_msg()
-  {
-    var text_input = document.getElementById('msg_input').value;
-    web_socket.send(text_input);
+    ws.send("v");
   }
 
-  function on_error(recv_data)
+  function on_cf_but()
   {
-    console.log("on_error");
-    document.getElementById('send_msg').style.display = 'none';
-    document.getElementById('fail').style.display = 'inline';
+    if (document.getElementById("sv_st").value > 0 || document.getElementById("wf_st").value > 0){
+      ws.send("d");
+    }
+    else{
+      ws.send(JSON.stringify(
+        {
+          "ssid": document.getElementById("ssid").value,
+          "pswd": document.getElementById("pswd").value,
+          "recon": (+document.getElementById("recon").checked),
+          "uri": document.getElementById("uri").value,
+          "port": new Number(document.getElementById("port").value),
+          "relog": (+document.getElementById("relog").checked)
+        }
+      ));
+    }
   }
 
   function on_message(recv_data)
   {
-    console.log("on_message");
-    console.log(recv_data.data);
-    console.log(typeof(recv_data.data));
-    console.log(recv_data.data.length);
-    // var recv_image_data = new Uint8Array(recv_data.data);
-    // var canvas_image = document.getElementById('canvas_image');
-    // var ctx = canvas_image.getContext('2d');
-    // var image = new Image();
-    // image.src = 'data:image/jpeg;base64,' + recv_data.data;
-    // image.onload = function() {
-    //   ctx.drawImage(image, 0, 0);
-    // }
+    try {
+      const data = JSON.parse(recv_data.data);
+      var wf_st = document.getElementById("wf_st");
+      var sv_st = document.getElementById("sv_st");
+      var vid_st = document.getElementById("vid_st");
+      var ssid = document.getElementById("ssid");
+      var pswd = document.getElementById("pswd");
+      var recon = document.getElementById("recon");
+      var uri = document.getElementById("uri");
+      var port = document.getElementById("port");
+      var relog = document.getElementById("relog");
+      
+      document.getElementById("id").textContent = data.id;
+      wf_st.value = data.wf_st;
+      sv_st.value = data.sv_st;
+      vid_st.value = data.vid_st;
+      
+      wf_st.textContent = wf_st.value > 0 ? "Connected" : "Disconnected";
+      wf_st.style.color = wf_st.value > 0 ? "green" : "crimson";
+      sv_st.textContent = sv_st.value == 2 ? "Logged in" : (sv_st.value == 1 ? "Connected - Not logged in" : "Not connected");
+      sv_st.style.color = sv_st.value == 2 ? "green" : (sv_st.value == 1 ? "darkorange" : "crimson");
+      vid_st.textContent = vid_st.value > 0 ? "Recording" : "Idle";
+      vid_st.style.color = vid_st.value > 0 ? "blue" : "black";
+
+      document.getElementById("cf_but").value = (wf_st.value > 0 || sv_st.value > 0) ? "Disconnect" : "Connect";
+      document.getElementById("vid_but").value = vid_st.value > 0 ? "Stop recording" : "Start recording";
+      
+      var val = wf_st.value > 0 || sv_st.value > 0 || vid_st.value > 0;
+      ssid.disabled = val;
+      pswd.disabled = val;
+      recon.disabled = val;
+      uri.disabled = val;
+      port.disabled = val;
+      relog.disabled = val;
+      document.getElementById("cf_but").disabled = vid_st.value > 0;
+      document.getElementById("vid_but").disabled = wf_st.value != 1 || sv_st.value != 2;
+
+      if (val){
+        ssid.value = data.ssid;
+        recon.checked = data.recon;
+        uri.value = data.uri;
+        port.value = data.port;
+        relog.checked = data.relog;
+      }
+      document.getElementById('openning').style.display = 'none';
+      document.getElementById('Config').style.display = 'inline';
+    }
+    catch (e) {
+      return;
+    }
   }
-
-  function on_disconnect()
+  
+  function on_error(recv_data)
   {
-    console.log("on_disconnect");
-    web_socket.close()
-
-    document.getElementById('send_msg').style.display = 'none';
-    document.getElementById('connect').style.display = 'inline';
+    console.log("connection lost");
+    document.getElementById('Config').style.display = 'none';
+    document.getElementById('closed').style.display = 'inline';
   }
 
 </script>

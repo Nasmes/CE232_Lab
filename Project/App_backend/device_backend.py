@@ -7,13 +7,12 @@ import numpy as np
 import sqlite3
 import struct
 from io import BytesIO 
-from pyngrok import ngrok
 from PIL import Image
 
 
 ##### Params ##################################################################
-PROJECT_PATH = ".."
-SERVER_PORT = 8765
+PROJECT_PATH = "/home/nasmes/CE232_Project"
+SERVER_PORT = 6699
 
 VIDEO_FPS = 5.0
 VIDEO_SIZE = (640,480)
@@ -95,6 +94,21 @@ def jpeg2cvmat(jpeg):
 
   return cvmat
 
+def video_write_gst_pipeline(filename= "test.mp4"):
+  return(
+    "appsrc "
+    "! video/x-raw, format=(string)BGR "
+    "! videoconvert "
+    "! video/x-raw, format=(string)BGRx "
+    "! nvvidconv "
+    "! x264enc pass=5 qp-max=25 speed-preset=1 "
+    "! h264parse "
+    "! qtmux "
+    "! filesink location=%s "
+    % (
+      filename
+    )
+  )
 
 ##### Core functions ##########################################################
 def release_device_handler(device_id):
@@ -238,13 +252,13 @@ async def request_gate(websocket):
                 print(f"New video from device!\n ID: {device_id}")
 
                 # Try to create folder path
-                videos_folder_path = f"{PROJECT_PATH}/Data_storage/{device_handlers[device_id][INDEX_USER_ID]}/videos/"
+                videos_folder_path = f"{PROJECT_PATH}/device-management/public/videos"
                 os.makedirs(videos_folder_path, 755, True)
 
                 # Create video writer
-                video_file_name = f"{device_name}_{int(time.time())}"
-                video_writer = cv2.VideoWriter(f"{videos_folder_path}/{video_file_name}.mp4",
-                                              cv2.VideoWriter_fourcc(*'mp4v'), VIDEO_FPS, VIDEO_SIZE)
+                video_file_name = f"{device_name}_{int(time.time())}".replace(' ', '_')
+                video_writer = cv2.VideoWriter(video_write_gst_pipeline(f"{videos_folder_path}/{video_file_name}.mp4"),
+                                               cv2.CAP_GSTREAMER, VIDEO_FPS, VIDEO_SIZE)
                 
                 # Update video handler
                 device_handlers[device_id][INDEX_VID_NAME] = video_file_name
@@ -283,7 +297,7 @@ async def request_gate(websocket):
             print(f"New timeline from device!\n ID: {device_id}")
 
             # Try to create folder path
-            timelines_folder_path = f"{PROJECT_PATH}/Data_storage/{device_handlers[device_id][INDEX_USER_ID]}/timelines/"
+            timelines_folder_path = f"{PROJECT_PATH}/device-management/public/timelines/"
             os.makedirs(timelines_folder_path, 755, True)
 
             # Create file writer
@@ -295,11 +309,11 @@ async def request_gate(websocket):
             device_handlers[device_id][INDEX_TL_HDL] = file
             
             # Write the first possition
-            device_handlers[device_id][INDEX_TL_HDL].write("""[\n  {"lat": %3.05f, "long": %3.05f}"""%(lat, long))
+            device_handlers[device_id][INDEX_TL_HDL].write("""[\n  {"lat": %3.05f, "lng": %3.05f}"""%(lat, long))
 
           else:
             # Append the position
-            device_handlers[device_id][INDEX_TL_HDL].write(""",\n  {"lat": %3.05f, "long": %3.05f}"""%(lat, long))
+            device_handlers[device_id][INDEX_TL_HDL].write(""",\n  {"lat": %3.05f, "lng": %3.05f}"""%(lat, long))
 
       # Device Login message
       elif (message[0] == ord('i')):
@@ -402,7 +416,6 @@ async def main():
 # ngrok.set_auth_token("2ftUo8P4VomY5RxX9VJ4KuawHyQ_5u8QjT3zd36K8m38ZBT5b")
 # url = ngrok.connect(SERVER_PORT, "tcp")
 # print(url)
-
 
 try:
   print(f"Starting webserver at port: {SERVER_PORT}")

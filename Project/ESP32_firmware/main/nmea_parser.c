@@ -113,9 +113,7 @@ static void parse_gga(esp_gps_t *esp_gps)
         parse_utc_time(esp_gps);
         break;
     case 2: /* Latitude */
-        float temp = parse_lat_long(esp_gps);
-        if (temp)
-            esp_gps->parent.latitude = temp;
+        esp_gps->parent.latitude = parse_lat_long(esp_gps);
         break;
     case 3: /* Latitude north(1)/south(-1) information */
         if (esp_gps->item_str[0] == 'S' || esp_gps->item_str[0] == 's') {
@@ -123,9 +121,7 @@ static void parse_gga(esp_gps_t *esp_gps)
         }
         break;
     case 4: /* Longitude */
-        float temp = parse_lat_long(esp_gps);
-        if (temp)
-            esp_gps->parent.longitude = temp;
+        esp_gps->parent.longitude = parse_lat_long(esp_gps);
         break;
     case 5: /* Longitude east(1)/west(-1) information */
         if (esp_gps->item_str[0] == 'W' || esp_gps->item_str[0] == 'w') {
@@ -295,13 +291,10 @@ static void parse_rmc(esp_gps_t *esp_gps)
  */
 static void parse_gll(esp_gps_t *esp_gps)
 {
-    float temp = 0;
     /* Process GPGLL statement */
     switch (esp_gps->item_num) {
     case 1:/* Latitude */
-        temp = parse_lat_long(esp_gps);
-        if (temp)
-            esp_gps->parent.latitude = temp;
+        esp_gps->parent.latitude = parse_lat_long(esp_gps);
         break;
     case 2: /* Latitude north(1)/south(-1) information */
         if (esp_gps->item_str[0] == 'S' || esp_gps->item_str[0] == 's') {
@@ -309,9 +302,7 @@ static void parse_gll(esp_gps_t *esp_gps)
         }
         break;
     case 3: /* Longitude */
-        temp = parse_lat_long(esp_gps);
-        if (temp)
-            esp_gps->parent.longitude = temp;
+        esp_gps->parent.longitude = parse_lat_long(esp_gps);
         break;
     case 4: /* Longitude east(1)/west(-1) information */
         if (esp_gps->item_str[0] == 'W' || esp_gps->item_str[0] == 'w') {
