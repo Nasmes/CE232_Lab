@@ -290,7 +290,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
 		xEventGroupSetBits(app_event_group, WIFI_INITIALIZED_BIT);
 	}
 	else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-		xEventGroupClearBits(app_event_group, WIFI_CONNECTED_BIT);
+		xEventGroupClearBits(app_event_group, WIFI_CONNECTED_BIT | VIDEO_RECORD_BIT);
 		if (xEventGroupGetBits(app_event_group) & DEVICE_LOGGED_IN_BIT){
 			xEventGroupClearBits(app_event_group, DEVICE_LOGGED_IN_BIT);
 			// Retry logging in later
